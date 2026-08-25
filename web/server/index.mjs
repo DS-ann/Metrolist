@@ -61,9 +61,10 @@ async function searchMusic(query) {
 
 async function player(videoId) {
   const yt = await getYouTube();
-  // youtubei.js exposes getStreamingData() specifically for obtaining a
-  // deciphered playable format URL. Passing options as an object is required
-  // by current youtubei.js versions.
+  console.log(`Playback request for ${videoId}`);
+
+  // youtubei.js documents getStreamingData() as the direct way to obtain
+  // a deciphered playable format URL.
   const format = await yt.getStreamingData(videoId, {
     type: 'audio',
     quality: 'best',
@@ -73,8 +74,8 @@ async function player(videoId) {
 
   return {
     id: videoId,
-    title: format.video_details?.title || 'Unknown title',
-    artist: format.video_details?.author || 'Unknown artist',
+    title: textValue(format.video_details?.title, 'Unknown title'),
+    artist: textValue(format.video_details?.author, 'Unknown artist'),
     streamUrl: format.url,
     mimeType: format.mime_type,
     bitrate: format.bitrate,
