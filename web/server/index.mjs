@@ -47,33 +47,23 @@ async function searchMusic(query) {
 
 async function player(videoId) {
   const yt = await getYouTube();
-  const info = await yt.getInfo(videoId);
-  const streaming = info.streaming_data;
-  if (!streaming) throw new Error('No streaming data returned');
+  const info = await yt.getBasicInfo(videoId, 'YTMUSIC');
+  const format = info.chooseFormat({ type: 'audio', quality: 'best' });
+  if (!format) throw new Error('No playable audio format returned');
 
-  const formats = [
-    ...(streaming.adaptive_formats || []),
-    ...(streaming.formats || []),
-  ];
-  const audio = formats
-    .filter((f) => f.mime_type?.startsWith('audio/') && (f.url || f.signature_cipher))
-    .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))[0];
+  const url = format.decipher(yt.session.player);
+  if (!url) throw new Error('The selected audio format could not be resolved');
 
-  if (!audio) throw new Error('No playable audio format returned');
-
-  // YouTube.js resolves deciphered URLs when the player response requires it.
-  const url = audio.url;
-  if (!url) throw new Error('The selected format has no resolved URL');
-
+  const thumbnail = info.basic_info?.thumbnail;
   return {
     id: videoId,
     title: info.basic_info?.title || 'Unknown title',
     artist: info.basic_info?.author || 'Unknown artist',
-    thumbnail: info.basic_info?.thumbnail?.[info.basic_info.thumbnail.length - 1]?.url,
+    thumbnail: thumbnail?.[thumbnail.length - 1]?.url,
     durationSeconds: Number(info.basic_info?.duration || 0) || undefined,
     streamUrl: url,
-    mimeType: audio.mime_type,
-    bitrate: audio.bitrate,
+    mimeType: format.mime_type,
+    bitrate: format.bitrate,
     playable: true,
   };
 }
@@ -97,19 +87,19 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/auth/me') {
       return send(res, 200, {
         authenticated: false,
-        message: 'Interactive Google/YouTube login is not enabled yet. No credentials are collected by this server.',
+        message: 'Interactive account login is not enabled yet.',
       });
     }
 
     if (url.pathname === '/api/search') {
       const query = url.searchParams.get('q')?.trim();
-      if (!query) return send(res, 400, { error: 'missing_query' });
+      if (!query || query.length > 200) return send(res, 400, { error: 'invalid_query' });
       return send(res, 200, { items: await searchMusic(query) });
     }
 
     if (url.pathname.startsWith('/api/player/')) {
       const id = decodeURIComponent(url.pathname.slice('/api/player/'.length));
-      if (!/^[A-Za-z0-9_-]{6,20}$/.test(id)) return send(res, 400, { error: 'invalid_video_id' });
+      if (!/^[A-Za-z0-9_-]{11}$/.test(id)) return send(res, 400, { error: 'invalid_video_id' });
       return send(res, 200, await player(id));
     }
 
