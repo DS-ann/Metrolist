@@ -3,7 +3,7 @@ import { URL } from 'node:url';
 import { Innertube, UniversalCache } from 'youtubei.js';
 
 const port = Number(process.env.PORT || 10000);
-const origin = process.env.WEB_ORIGIN || '*';
+const configuredOrigin = process.env.WEB_ORIGIN || 'https://ds-ann.github.io';
 
 let ytPromise;
 async function getYouTube() {
@@ -18,13 +18,21 @@ async function getYouTube() {
   return ytPromise;
 }
 
-const send = (res, status, body, contentType = 'application/json; charset=utf-8') => {
+const corsHeaders = (requestOrigin) => {
+  const allowedOrigin = requestOrigin === configuredOrigin ? requestOrigin : configuredOrigin;
+  return {
+    'Access-Control-Allow-Origin': allowedOrigin,
+    'Vary': 'Origin',
+    'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+  };
+};
+
+const send = (req, res, status, body, contentType = 'application/json; charset=utf-8') => {
   res.writeHead(status, {
     'Content-Type': contentType,
     'Cache-Control': 'no-store',
-    'Access-Control-Allow-Origin': origin,
-    'Access-Control-Allow-Credentials': 'true',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    ...corsHeaders(req.headers.origin),
   });
   res.end(typeof body === 'string' ? body : JSON.stringify(body));
 };
@@ -70,22 +78,17 @@ async function player(videoId) {
 
 const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') {
-    res.writeHead(204, {
-      'Access-Control-Allow-Origin': origin,
-      'Access-Control-Allow-Credentials': 'true',
-      'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
-    });
+    res.writeHead(204, corsHeaders(req.headers.origin));
     return res.end();
   }
 
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
 
   try {
-    if (url.pathname === '/health') return send(res, 200, 'ok', 'text/plain; charset=utf-8');
+    if (url.pathname === '/health') return send(req, res, 200, 'ok', 'text/plain; charset=utf-8');
 
     if (url.pathname === '/api/auth/me') {
-      return send(res, 200, {
+      return send(req, res, 200, {
         authenticated: false,
         message: 'Interactive account login is not enabled yet.',
       });
@@ -93,20 +96,20 @@ const server = http.createServer(async (req, res) => {
 
     if (url.pathname === '/api/search') {
       const query = url.searchParams.get('q')?.trim();
-      if (!query || query.length > 200) return send(res, 400, { error: 'invalid_query' });
-      return send(res, 200, { items: await searchMusic(query) });
+      if (!query || query.length > 200) return send(req, res, 400, { error: 'invalid_query' });
+      return send(req, res, 200, { items: await searchMusic(query) });
     }
 
     if (url.pathname.startsWith('/api/player/')) {
       const id = decodeURIComponent(url.pathname.slice('/api/player/'.length));
-      if (!/^[A-Za-z0-9_-]{11}$/.test(id)) return send(res, 400, { error: 'invalid_video_id' });
-      return send(res, 200, await player(id));
+      if (!/^[A-Za-z0-9_-]{11}$/.test(id)) return send(req, res, 400, { error: 'invalid_video_id' });
+      return send(req, res, 200, await player(id));
     }
 
-    return send(res, 404, { error: 'not_found' });
+    return send(req, res, 404, { error: 'not_found' });
   } catch (error) {
     console.error(error);
-    return send(res, 502, {
+    return send(req, res, 502, {
       error: 'upstream_error',
       message: error instanceof Error ? error.message : 'Unknown error',
     });
