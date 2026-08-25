@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useRef, useState } from 'react';
+import { StrictMode, useEffect, useRef, useState, type FormEvent } from 'react';
 import { createRoot } from 'react-dom/client';
 import { api, type Track } from './api';
 import './styles.css';
@@ -41,7 +41,7 @@ function App() {
     }
   }, [audio, current]);
 
-  async function search(event: React.FormEvent) {
+  async function search(event: FormEvent) {
     event.preventDefault();
     if (!query.trim()) return;
     setLoading(true); setError('');
