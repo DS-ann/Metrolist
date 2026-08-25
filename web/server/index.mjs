@@ -38,20 +38,30 @@ const send = (req, res, status, body, contentType = 'application/json; charset=u
   res.end(typeof body === 'string' ? body : JSON.stringify(body));
 };
 
+function textValue(value, fallback = '') {
+  if (typeof value === 'string') return value;
+  return value?.text || value?.toString?.() || fallback;
+}
+
 function mapResult(item) {
+  const thumbnails = item.thumbnails || item.thumbnail || [];
+  const duration = item.duration;
   return {
     id: item.id,
-    title: item.title?.text || item.title || 'Unknown title',
-    artist: item.author?.name || item.author?.text || item.author || 'Unknown artist',
-    thumbnail: item.thumbnails?.[item.thumbnails.length - 1]?.url,
-    durationSeconds: item.duration?.seconds,
+    title: textValue(item.title, 'Unknown title'),
+    artist: textValue(item.author?.name || item.author, 'Unknown artist'),
+    thumbnail: thumbnails[thumbnails.length - 1]?.url,
+    durationSeconds: duration?.seconds || duration?.total_seconds,
   };
 }
 
 async function searchMusic(query) {
   const yt = await getYouTube();
   const result = await yt.music.search(query, { type: 'song' });
-  return (result?.contents || []).map(mapResult).filter((x) => x.id);
+  // youtubei.js 18 exposes typed music results under `songs.contents`.
+  const contents = result?.songs?.contents || result?.contents || [];
+  console.log(`Search "${query}" returned ${contents.length} items`);
+  return contents.map(mapResult).filter((x) => x.id);
 }
 
 async function player(videoId) {
@@ -84,6 +94,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+  console.log(`${req.method} ${url.pathname}${url.search}`);
 
   try {
     if (url.pathname === '/health') return send(req, res, 200, 'ok', 'text/plain; charset=utf-8');
@@ -109,7 +120,7 @@ const server = http.createServer(async (req, res) => {
 
     return send(req, res, 404, { error: 'not_found' });
   } catch (error) {
-    console.error(error);
+    console.error('API error:', error);
     return send(req, res, 502, {
       error: 'upstream_error',
       message: error instanceof Error ? error.message : 'Unknown error',
