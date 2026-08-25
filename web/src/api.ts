@@ -9,9 +9,10 @@ export type Track = {
 };
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? '/api';
+const API_PREFIX = import.meta.env.VITE_API_BASE ? '/api' : '';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await fetch(`${API_BASE}${API_PREFIX}${path}`, {
     credentials: 'include',
     ...init,
     headers: { Accept: 'application/json', ...(init?.headers ?? {}) },
