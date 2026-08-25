@@ -18,22 +18,19 @@ async function getYouTube() {
   return ytPromise;
 }
 
-const corsHeaders = (requestOrigin) => {
-  const allowedOrigin = requestOrigin === configuredOrigin ? requestOrigin : configuredOrigin;
-  return {
-    'Access-Control-Allow-Origin': allowedOrigin,
-    'Access-Control-Allow-Credentials': 'true',
-    'Vary': 'Origin',
-    'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
-  };
-};
+const corsHeaders = () => ({
+  'Access-Control-Allow-Origin': configuredOrigin,
+  'Access-Control-Allow-Credentials': 'true',
+  'Vary': 'Origin',
+  'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+});
 
 const send = (req, res, status, body, contentType = 'application/json; charset=utf-8') => {
   res.writeHead(status, {
     'Content-Type': contentType,
     'Cache-Control': 'no-store',
-    ...corsHeaders(req.headers.origin),
+    ...corsHeaders(),
   });
   res.end(typeof body === 'string' ? body : JSON.stringify(body));
 };
@@ -45,20 +42,18 @@ function textValue(value, fallback = '') {
 
 function mapResult(item) {
   const thumbnails = item.thumbnails || item.thumbnail || [];
-  const duration = item.duration;
   return {
     id: item.id,
     title: textValue(item.title, 'Unknown title'),
     artist: textValue(item.author?.name || item.author, 'Unknown artist'),
     thumbnail: thumbnails[thumbnails.length - 1]?.url,
-    durationSeconds: duration?.seconds || duration?.total_seconds,
+    durationSeconds: item.duration?.seconds || item.duration?.total_seconds,
   };
 }
 
 async function searchMusic(query) {
   const yt = await getYouTube();
   const result = await yt.music.search(query, { type: 'song' });
-  // youtubei.js 18 exposes typed music results under `songs.contents`.
   const contents = result?.songs?.contents || result?.contents || [];
   console.log(`Search "${query}" returned ${contents.length} items`);
   return contents.map(mapResult).filter((x) => x.id);
@@ -66,21 +61,21 @@ async function searchMusic(query) {
 
 async function player(videoId) {
   const yt = await getYouTube();
-  const info = await yt.getBasicInfo(videoId, 'YTMUSIC');
-  const format = info.chooseFormat({ type: 'audio', quality: 'best' });
-  if (!format) throw new Error('No playable audio format returned');
+  // youtubei.js exposes getStreamingData() specifically for obtaining a
+  // deciphered playable format URL. Passing options as an object is required
+  // by current youtubei.js versions.
+  const format = await yt.getStreamingData(videoId, {
+    type: 'audio',
+    quality: 'best',
+  });
 
-  const url = format.decipher(yt.session.player);
-  if (!url) throw new Error('The selected audio format could not be resolved');
+  if (!format?.url) throw new Error('No playable audio format returned');
 
-  const thumbnail = info.basic_info?.thumbnail;
   return {
     id: videoId,
-    title: info.basic_info?.title || 'Unknown title',
-    artist: info.basic_info?.author || 'Unknown artist',
-    thumbnail: thumbnail?.[thumbnail.length - 1]?.url,
-    durationSeconds: Number(info.basic_info?.duration || 0) || undefined,
-    streamUrl: url,
+    title: format.video_details?.title || 'Unknown title',
+    artist: format.video_details?.author || 'Unknown artist',
+    streamUrl: format.url,
     mimeType: format.mime_type,
     bitrate: format.bitrate,
     playable: true,
@@ -89,7 +84,7 @@ async function player(videoId) {
 
 const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') {
-    res.writeHead(204, corsHeaders(req.headers.origin));
+    res.writeHead(204, corsHeaders());
     return res.end();
   }
 
