@@ -63,9 +63,11 @@ async function player(videoId) {
   const yt = await getYouTube();
   console.log(`Playback request for ${videoId}`);
 
-  // youtubei.js documents getStreamingData() as the direct way to obtain
-  // a deciphered playable format URL.
+  // The default YT Music client is currently returning a player interstitial
+  // that youtubei.js 18.0.0 cannot parse. MWEB has a compatible player response
+  // and is supported by youtubei.js as a playback client option.
   const format = await yt.getStreamingData(videoId, {
+    client: 'MWEB',
     type: 'audio',
     quality: 'best',
   });
