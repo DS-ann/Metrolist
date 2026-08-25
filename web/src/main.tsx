@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client';
 import { api, type Track } from './api';
 import './styles.css';
 
+const moods = ['Chill', 'Energy', 'Focus', 'Workout', 'Sleep', 'Party', 'Romance', 'Discover'];
+
 function App() {
   const audio = useRef<HTMLAudioElement | null>(null);
   const [query, setQuery] = useState('');
@@ -39,7 +41,6 @@ function App() {
       album: current.album ?? 'Metrolist',
       artwork: current.thumbnail ? [{ src: current.thumbnail }] : [],
     });
-
     const handlers: Partial<Record<MediaSessionAction, () => void>> = {
       play: () => void player.play(),
       pause: () => player.pause(),
@@ -48,11 +49,11 @@ function App() {
       seekforward: () => { player.currentTime = Math.min(Number.isFinite(player.duration) ? player.duration : Infinity, player.currentTime + 10); },
     };
     for (const [action, handler] of Object.entries(handlers)) {
-      try { navigator.mediaSession.setActionHandler(action as MediaSessionAction, handler!); } catch { /* unsupported action */ }
+      try { navigator.mediaSession.setActionHandler(action as MediaSessionAction, handler!); } catch { /* unsupported */ }
     }
     return () => {
       for (const action of Object.keys(handlers)) {
-        try { navigator.mediaSession.setActionHandler(action as MediaSessionAction, null); } catch { /* unsupported action */ }
+        try { navigator.mediaSession.setActionHandler(action as MediaSessionAction, null); } catch { /* unsupported */ }
       }
     };
   }, [player, current]);
@@ -60,7 +61,8 @@ function App() {
   async function search(event: FormEvent) {
     event.preventDefault();
     if (!query.trim()) return;
-    setLoading(true); setError('');
+    setLoading(true);
+    setError('');
     try { setResults((await api.search(query.trim())).items); }
     catch (e) { setError(e instanceof Error ? e.message : 'Search failed.'); }
     finally { setLoading(false); }
@@ -83,32 +85,88 @@ function App() {
     }
   }
 
+  const homeTracks = results.slice(0, 10);
+
   return (
     <div className="app">
       <header className="topbar">
-        <div className="brand">Metrolist</div>
+        <button className="brand" onClick={() => { setResults([]); setQuery(''); }}>Metrolist</button>
         <form className="search" onSubmit={search}>
+          <span className="search-icon">⌕</span>
           <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search songs, artists, albums…" />
           <button type="submit">Search</button>
         </form>
         <button className="login" onClick={() => setError('Web login will be handled by the server session layer.')}>Sign in</button>
       </header>
 
-      <main className="content">
-        <section className="hero-card">
+      <main className="home">
+        <div className="home-heading">
           <div>
-            <span className="eyebrow">METROLIST WEB</span>
-            <h1>Music without the Android shell.</h1>
-            <p>Search, stream and control playback from an installable web app.</p>
+            <span className="overline">WELCOME BACK</span>
+            <h1>Home</h1>
           </div>
-          <div className="hero-note">Background playback<br />Media Session ready</div>
+          <button className="icon-action" aria-label="Random music">⌘</button>
+        </div>
+
+        <nav className="chips" aria-label="Home categories">
+          {['For you', 'Quick picks', 'Daily discover', 'Mood & genres'].map((chip, i) => (
+            <button className={i === 0 ? 'chip active' : 'chip'} key={chip}>{chip}</button>
+          ))}
+        </nav>
+
+        <section className="speed-dial">
+          <div className="section-title"><h2>Speed dial</h2><button>See all</button></div>
+          <div className="speed-row">
+            {homeTracks.slice(0, 6).map(track => (
+              <button className="speed-item" key={track.id} onClick={() => void play(track)}>
+                {track.thumbnail ? <img src={track.thumbnail} alt="" /> : <div className="speed-cover" />}
+                <span>{track.title}</span>
+              </button>
+            ))}
+            {homeTracks.length === 0 && <div className="empty-home">Search for music to build your Speed dial.</div>}
+          </div>
+        </section>
+
+        <section>
+          <div className="section-title"><h2>Quick picks</h2><button>More</button></div>
+          <div className="album-row">
+            {homeTracks.slice(0, 8).map(track => (
+              <button className="music-card" key={track.id} onClick={() => void play(track)}>
+                {track.thumbnail ? <img src={track.thumbnail} alt="" /> : <div className="card-cover" />}
+                <strong>{track.title}</strong>
+                <span>{track.artist}</span>
+              </button>
+            ))}
+            {homeTracks.length === 0 && <div className="empty-home">Your personalized picks will appear here.</div>}
+          </div>
+        </section>
+
+        <section className="discover-panel">
+          <div>
+            <span className="overline">DISCOVER SOMETHING NEW</span>
+            <h2>Daily discover</h2>
+            <p>Fresh music based on what you listen to.</p>
+          </div>
+          <button onClick={() => { setQuery('new music'); void search({ preventDefault() {} } as FormEvent); }}>Explore</button>
+        </section>
+
+        <section>
+          <div className="section-title"><h2>Mood & genres</h2><button>See all</button></div>
+          <div className="mood-grid">
+            {moods.map((mood, i) => <button key={mood} className={`mood mood-${i % 4}`} onClick={() => { setQuery(mood); }}>{mood}</button>)}
+          </div>
+        </section>
+
+        <section>
+          <div className="section-title"><h2>Keep listening</h2><button>History</button></div>
+          <div className="keep-listening">{current ? <button className="keep-item" onClick={() => void play(current)}><img src={current.thumbnail} alt="" /><span><strong>{current.title}</strong><small>{current.artist}</small></span><b>▶</b></button> : <div className="empty-home">Your listening history will appear here.</div>}</div>
         </section>
 
         {error && <div className="error">{error}</div>}
-        {loading && <div className="muted">Searching…</div>}
+        {loading && <div className="muted loading">Searching…</div>}
         {!loading && results.length > 0 && (
-          <section>
-            <h2>Results</h2>
+          <section className="search-results">
+            <div className="section-title"><h2>Search results</h2></div>
             <div className="results">{results.map(track => (
               <button className="track" key={track.id} onClick={() => void play(track)}>
                 {track.thumbnail ? <img src={track.thumbnail} alt="" /> : <div className="cover" />}
