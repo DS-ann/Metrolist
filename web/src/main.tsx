@@ -4,7 +4,7 @@ import { api, type Track } from './api';
 import './styles.css';
 
 function App() {
-  const audio = useRef(new Audio()).current;
+  const audio = useRef<HTMLAudioElement | null>(null);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Track[]>([]);
   const [current, setCurrent] = useState<Track | null>(null);
@@ -12,17 +12,24 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  if (!audio.current) audio.current = new Audio();
+  const player = audio.current;
+
   useEffect(() => {
     const onPlay = () => setPlaying(true);
     const onPause = () => setPlaying(false);
-    audio.addEventListener('play', onPlay);
-    audio.addEventListener('pause', onPause);
+    const onEnded = () => setPlaying(false);
+    player.addEventListener('play', onPlay);
+    player.addEventListener('pause', onPause);
+    player.addEventListener('ended', onEnded);
     return () => {
-      audio.pause();
-      audio.removeEventListener('play', onPlay);
-      audio.removeEventListener('pause', onPause);
+      player.pause();
+      player.removeAttribute('src');
+      player.removeEventListener('play', onPlay);
+      player.removeEventListener('pause', onPause);
+      player.removeEventListener('ended', onEnded);
     };
-  }, [audio]);
+  }, [player]);
 
   useEffect(() => {
     if (!('mediaSession' in navigator) || !current) return;
@@ -32,21 +39,30 @@ function App() {
       album: current.album ?? 'Metrolist',
       artwork: current.thumbnail ? [{ src: current.thumbnail }] : [],
     });
-    const controls: [MediaSessionAction, () => void][] = [
-      ['play', () => void audio.play()],
-      ['pause', () => audio.pause()],
-    ];
-    for (const [action, handler] of controls) {
-      try { navigator.mediaSession.setActionHandler(action, handler); } catch { /* unsupported action */ }
+
+    const handlers: Partial<Record<MediaSessionAction, () => void>> = {
+      play: () => void player.play(),
+      pause: () => player.pause(),
+      stop: () => { player.pause(); player.currentTime = 0; },
+      seekbackward: () => { player.currentTime = Math.max(0, player.currentTime - 10); },
+      seekforward: () => { player.currentTime = Math.min(Number.isFinite(player.duration) ? player.duration : Infinity, player.currentTime + 10); },
+    };
+    for (const [action, handler] of Object.entries(handlers)) {
+      try { navigator.mediaSession.setActionHandler(action as MediaSessionAction, handler!); } catch { /* unsupported action */ }
     }
-  }, [audio, current]);
+    return () => {
+      for (const action of Object.keys(handlers)) {
+        try { navigator.mediaSession.setActionHandler(action as MediaSessionAction, null); } catch { /* unsupported action */ }
+      }
+    };
+  }, [player, current]);
 
   async function search(event: FormEvent) {
     event.preventDefault();
     if (!query.trim()) return;
     setLoading(true); setError('');
     try { setResults((await api.search(query.trim())).items); }
-    catch { setError('The web API is not connected yet.'); }
+    catch (e) { setError(e instanceof Error ? e.message : 'Search failed.'); }
     finally { setLoading(false); }
   }
 
@@ -54,13 +70,16 @@ function App() {
     setError('');
     try {
       const resolved = track.streamUrl ? track : await api.player(track.id);
-      if (!resolved.streamUrl) throw new Error('No stream URL');
-      audio.src = resolved.streamUrl;
-      audio.load();
-      await audio.play();
+      if (!resolved.streamUrl) throw new Error('No playable stream was returned.');
+      player.pause();
+      player.src = resolved.streamUrl;
+      player.load();
       setCurrent(resolved);
-    } catch {
-      setError('Playback is unavailable until the server stream adapter is configured.');
+      await player.play();
+      if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+    } catch (e) {
+      if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'none';
+      setError(e instanceof Error ? e.message : 'Playback failed.');
     }
   }
 
@@ -105,7 +124,7 @@ function App() {
         <div className="now-playing">
           {current ? <><strong>{current.title}</strong><span>{current.artist}</span></> : <span>Nothing playing</span>}
         </div>
-        <button className="play-button" onClick={() => playing ? audio.pause() : void audio.play()} disabled={!current}>{playing ? '❚❚' : '▶'}</button>
+        <button className="play-button" onClick={() => playing ? player.pause() : void player.play()} disabled={!current}>{playing ? '❚❚' : '▶'}</button>
         <div className="player-status">{playing ? 'Playing' : current ? 'Paused' : 'Ready'}</div>
       </footer>
     </div>
