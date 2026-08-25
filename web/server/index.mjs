@@ -22,6 +22,7 @@ const corsHeaders = (requestOrigin) => {
   const allowedOrigin = requestOrigin === configuredOrigin ? requestOrigin : configuredOrigin;
   return {
     'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Credentials': 'true',
     'Vary': 'Origin',
     'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
